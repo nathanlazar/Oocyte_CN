@@ -1,0 +1,79 @@
+# nathan dot lazar at gmail dot com
+
+# Prep reads for analysis w/ Gingko (http://qb.cshl.edu/ginkgo)
+
+# Directory /u0/dbase/nl/OOCYTES/ contains scripts and input files
+
+# Software versions:
+# fastqc: v0.10.1
+# cutadapt: v1.8.1
+# BWA-mem: 0.7.12-r1044
+# samtools: v1.2
+#   with rmdup from version 0.1.9
+
+##############################################################################################################
+# 1) Link to fastq files
+for f in `ls /u0/dbase/Copy_Number_Pipeline/Sequencing/Jan_6_MiSeq/*.fastq.gz`
+  do echo $f; ln -s $f RAW_READS; done
+
+##############################################################################################################
+# 2) Run fastqc on these reads to determine trimming etc.
+fastqc --outdir FASTQC --noextract --threads 6 RAW_READS/Monosomy*
+fastqc --outdir FASTQC --noextract --threads 6 RAW_READS/Trisomy*
+
+##############################################################################################################
+# 3) Prepare reads for mapping (script by Larry Wilhelm)
+# This process runs cutadapt for adapter trimming, and blunt trims reads. In this
+# example we are chopping 15 from 5' end and 5 from 3' end of both reads.
+# These numbers are arrived at by examining fastqc reports of the untrimmed reads.
+# The script takes the R1 file as input and figures out what the R2 file should
+# be based on the name. Files must end with fastq.gz.
+
+for f in `ls RAW_READS/Monosomy*R1*`
+  do echo $f; ./prep_reads.sh $f 15 5 15 5; done 
+for f in `ls RAW_READS/Trisomy*R1*`
+  do echo $f; ./prep_reads.sh $f 15 5 15 5; done 
+
+# Output is a file that ends with .clean.fastq.gz for R1 and R2.
+# move these to PROCESSED_READS
+mv RAW_READS/*.clean.fastq.gz PROCESSED_READS
+mv RAW_READS/*.report.gz PROCESSED_READS
+
+##############################################################################################################
+# 4a) Map with Bowtie2
+
+for f1 in `ls PROCESSED_READS/Monosomy*R1*clean.fastq.gz`
+  do echo $f1; f2=${f1/R1/R2}; echo $f2
+  f=${f1/PROCESSED_READS/MAPPED_human}
+  f=${f/_L001_R1_001.clean.fastq.gz/}
+  echo $f
+  bowtie2 -x hg19_bowtie2/hg19 -1 $f1 -2 $f2 -S $f.sam &> $f.out
+  done
+
+for f1 in `ls PROCESSED_READS/Trisomy*R1*clean.fastq.gz`
+  do echo $f1; f2=${f1/R1/R2}; echo $f2
+  f=${f1/PROCESSED_READS/MAPPED_human}
+  f=${f/_L001_R1_001.clean.fastq.gz/}
+  echo $f
+  bowtie2 -x hg19_bowtie2/hg19 -1 $f1 -2 $f2 -S $f.sam &> $f.out
+  done
+
+# 4b) Convert to bam
+for f in `ls MAPPED_human/*.sam`
+  do echo $f; out=${f/.sam/.bam}; echo $out
+  samtools view -Sb $f -q 20 -o $out
+  done
+
+# 4c) Remove .sam file
+rm MAPPED_human/*.sam
+
+# 4c) Convert to bed
+for f in `ls MAPPED_human/*.bam`
+  do echo $f; out=${f/.bam/.bed}; echo $out
+  bamToBed -i $f > $out
+  done
+
+#############################################################################################################
+# 5. Analyze with Gingko
+
+

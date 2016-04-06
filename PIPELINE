@@ -1,0 +1,194 @@
+# nathan dot lazar at gmail dot com
+
+# Directory /u0/dbase/nl/OOCYTES/ contains scripts and input files
+
+# Software versions:
+# fastqc: v0.10.1
+# cutadapt: v1.8.1
+# BWA-mem: 0.7.12-r1044
+# samtools: v1.2
+#   with rmdup from version 0.1.9
+
+##############################################################################################################
+# 1) Concatenate fastq files. 
+#    We use reads from female fibroblasts known to be euploid to construct
+#    variable-sized windows with a constant number of expected reads in each.
+
+cat /u0/dbase/Copy_Number_Pipeline/Sequencing/Jan_9_MiSeq/xx-*R1* > RAW_READS/xx-euploid_all.R1.fastq.gz 
+cat /u0/dbase/Copy_Number_Pipeline/Sequencing/Jan_9_MiSeq/xx-*R2* > RAW_READS/xx-euploid_all.R2.fastq.gz
+
+##############################################################################################################
+# 2) Run fastqc on these reads to determine trimming etc.
+mkdir FASTQC
+fastqc --outdir FASTQC --noextract --threads 6 RAW_READS/xx-euploid_all.R1.fastq.gz
+fastqc --outdir FASTQC --noextract --threads 6 RAW_READS/xx-euploid_all.R2.fastq.gz
+
+##############################################################################################################
+# 3) Prepare reads for mapping (script by Larry Wilhelm)
+# This process runs cutadapt for adapter trimming, and blunt trims reads. In this
+# example we are chopping 15 from 5' end and 5 from 3' end of both reads.
+# These numbers are arrived at by examining fastqc reports of the untrimmed reads.
+# The script takes the R1 file as input and figures out what the R2 file should
+# be based on the name. Files must end with fastq.gz.
+
+./prep_reads.sh RAW_READS/xx-euploid_all.R1.fastq.gz 15 5 15 5 &
+
+# Output is a file that ends with .clean.fastq.gz for R1 and R2.
+# move these to PROCESSED_READS
+mkdir PROCESSED_READS
+mv RAW_READS/*.clean.fastq.gz PROCESSED_READS
+mv RAW_READS/*.report.gz PROCESSED_READS
+
+##############################################################################################################
+# 4) Map with BWA-MEM
+
+# Note: The genome must first be indexed w/ bwa index
+
+# Arguments to script are: genome.fasta R1_file R2_file output_name
+# Example:
+
+./run_bwa_mem.sh \
+  RheMac7_repmasked/macam.fa.masked \
+  PROCESSED_READS/xx-euploid_all.R1.clean.fastq.gz \
+  PROCESSED_READS/xx-euploid_all.R2.clean.fastq.gz \
+  MAPPED_MASKED/xx-euploid_masked 
+
+# This script runs bwa-mem, and filters for quality of 30, and removes duplicates.
+# Outputs are:
+#  xx-euploid_all.bam
+#  xx-euploid_all.bam.bai
+#  xx-euploid_all.mapped_reads   # Read counts at each step
+#  xx-euploid_all.q30.bam
+#  xx-euploid_all.q30.rmdup.bam  # Duplicates removed by samtools
+
+#############################################################################################################
+# 5. Get reference windows
+# (Windows of variable width containing aproximately constant number of reads)
+
+Rscript make_windows.R  MAPPED_MASKED/xx-euploid_masked.q30.rmdup.bam 200 > xx-bins_200.txt
+Rscript make_windows.R  MAPPED_MASKED/xx-euploid_masked.q30.rmdup.bam 1000 > xx-bins_1000.txt
+Rscript make_windows.R  MAPPED_MASKED/xx-euploid_masked.q30.rmdup.bam 5000 > xx-bins_5000.txt
+Rscript make_windows.R  MAPPED_MASKED/xx-euploid_masked.q30.rmdup.bam 10000 > xx-bins_10000.txt
+Rscript make_windows.R  MAPPED_MASKED/xx-euploid_masked.q30.rmdup.bam 20000 > xx-bins_20000.txt
+
+# The generated .txt files contain the chrom, start and end of each window and the count
+# of reads in each window. Due to pileups of reads at the same location these counts
+# may be slightly larger than the desired number. The counts are used to calculate expected 
+# counts for each bin for new samples as a proportion of the total reads.
+
+#############################################################################################################
+# 6. Process non-control reads for mapping
+
+# Combine reads from male fibroblast samples
+cat /u0/dbase/Copy_Number_Pipeline/Sequencing/Jan_9_MiSeq/xy-*R1* > RAW_READS/xy-euploid_all.R1.fastq.gz 
+cat /u0/dbase/Copy_Number_Pipeline/Sequencing/Jan_9_MiSeq/xy-*R2* > RAW_READS/xy-euploid_all.R2.fastq.gz
+
+# Create links to raw data for male fibroblasts
+for f in `ls /u0/dbase/Copy_Number_Pipeline/Sequencing/Jan_9_MiSeq/xy-*`
+  do echo $f; ln -s $f RAW_READS; done
+
+# Create links to raw data from Nov 17 2014 runs
+for f in `ls /u0/dbase/Copy_Number_Pipeline/Sequencing/Nov_17_MiSeq/*`
+  do echo $f; ln -s $f RAW_READS; done
+
+# Create links to raw data from Nov 21 2014 runs
+for f in `ls /u0/dbase/lw/MiSeq_Nov21_2014/*.fastq.gz`
+  do echo $f; ln -s $f RAW_READS ; done
+
+# Combine reads from /home/groups/carbone/DNA150501LC/150527_NS500681_0004_AH3CNWAFXX_dual/
+# that come from different lanes. 
+for lane1 in `ls /home/groups/carbone/DNA150501LC/150527_NS500681_0004_AH3CNWAFXX_dual/rh*L001*`
+  do name=`basename $lane1 | sed 's/L001_//'`
+     lane2=`echo $lane1 | sed 's/L001/L002/'`
+     lane3=`echo $lane1 | sed 's/L001/L003/'`
+     lane4=`echo $lane1 | sed 's/L001/L004/'`
+  cat $lane1 $lane2 $lane3 $lane4 > RAW_READS/$name
+  done
+
+# Run FASTQC on raw reads
+for f in `ls RAW_READS/*`
+  do echo $f; fastqc --outdir FASTQC --noextract --threads 6 RAW_READS/$f; done
+
+# Prep reads for mapping
+for f in `ls RAW_READS/*R1_001.fastq.gz`; do ./prep_reads.sh $f 15 5 15 5 ; done
+
+# Output is a file that ends with .clean.fastq.gz for R1 and R2.
+# move these to PROCESSED_READS
+mkdir PROCESSED_READS
+mv RAW_READS/*.clean.fastq.gz PROCESSED_READS
+mv RAW_READS/*.report.gz PROCESSED_READS
+
+#############################################################################################################
+# 7. Map new samples to repeat masked genome using BWA-mem
+
+for r1 in `ls PROCESSED_READS/xy-euploid-*R1*.clean.fastq.gz`
+  do echo $r1; r2=`echo $r1 | sed 's/R1/R2/'`; echo $r2
+  base=`basename $r1 | sed 's/_R1_001.clean.fastq.gz//'`; echo MAPPED_MASKED/$base
+  ./run_bwa_mem.sh RheMac7_repmasked/macam.fa.masked $r1 $r2 MAPPED_MASKED/$base
+  done
+
+## ** HERE for xy reads ** ##
+
+#############################################################################################################
+# 8. Count reads in bins for the non-reference samples
+
+for f in `ls MAPPED_MASKED/*.q30.rmdup.bam`
+  do echo $f; name=`echo $f | sed 's/.q30.rmdup.bam//'`; echo $name
+  Rscript count_bin_reads.R xx-bins_200.txt $f $name.bin_200_counts.txt
+  done
+
+# This script reports the bin loci, raw counts per bin, percentage of reads in each bin,
+# expected percentage of reads in each bin and the ratio of the observed percentage of 
+# reads in each bin to the expected percentage of reads in each bin. This last value 
+# is what is plotted to determine loss of chromosomes (or pieces thereof).
+
+# For samples with less than 200,000 reads, use bins of 1000 reads
+for f in `ls MAPPED_MASKED/*.q30.rmdup.bam`
+  do echo $f; name=`echo $f | sed 's/.q30.rmdup.bam//'`; echo $name
+  reads=`tail -n 1 $name.mapped_reads`; echo $reads
+  if [ $reads -lt 200000 ]
+    then Rscript count_bin_reads.R xx-bins_1000.txt $f $name.bin_1000_counts.txt
+  fi
+  done
+
+#############################################################################################################
+# 9. Generate plots of observed vs. expected read counts in each bin
+
+for f in `ls MAPPED_MASKED/*_200_counts.txt`
+  do echo $f; Rscript plot_copy_number.R $f; done
+
+mkdir CN_PLOTS
+mkdir CN_PLOTS/200_read_bins
+for f in `ls -d MAPPED_MASKED/*_plots`
+  do mv $f CN_PLOTS/200_read_bins/ ; done
+
+# For samples with less than 200k reads, use 1000 bp bins
+for f in `ls MAPPED_MASKED/*_1000_counts.txt`
+  do echo $f; Rscript plot_copy_number.R $f; done
+
+## HERE ##
+mkdir CN_PLOTS/1000_read_bins
+for f in `ls -d MAPPED_MASKED/*_plots`
+  do mv $f CN_PLOTS/1000_read_bins; done
+
+# Plots are placed in directories CN_PLOTS/200_read_bins/<name>_plots or
+# CN_PLOTS/1000_read_bins/<name>_plots
+
+# for f in `ls CN_PLOTS/1000_read_bins/*_plots/*_plots/*.png`; do echo $f; 
+#   new=`echo $f | cut -d'/' -f1,2,4,5`; echo $new; mv $f $new; done
+
+# Make a table of read counts
+#############################################################################
+
+echo -e 'reads\tmapped\tpassQ30\tunique' > all_read_counts.txt
+for f in `ls MAPPED_MASKED/*.mapped_reads`
+  do name=`basename $f | sed 's/.mapped_reads//' | sed 's/_L001//'`
+  echo -n -e "$name\t"
+  raw=RAW_READS/`basename $f | sed 's/.mapped_reads/_R1_001.fastq.gz/'`
+  tot_reads=`echo $(zcat $raw | wc -l) / 4 | bc`
+  echo -n -e "$tot_reads\t"
+  mapped=`grep -a1 "All reads:" $f | tail -n 1`
+  passQ=`grep -a1 "Passing Q 30 filter:" $f | tail -n 1`
+  unique=`grep -a1 "After samtools rmdup:" $f | tail -n 1`
+  echo -e "$mapped\t$passQ\t$unique"
+done >> all_read_counts.txt

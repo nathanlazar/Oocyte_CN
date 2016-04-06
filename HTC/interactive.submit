@@ -1,0 +1,8 @@
+should_transfer_files = IF_NEEDED
+when_to_transfer_output = ON_EXIT
+
+request_cpus = 24
+request_memory = 10 MB
+request_disk = 1 MB
+
+queue

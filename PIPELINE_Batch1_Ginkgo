@@ -1,0 +1,125 @@
+# nathan dot lazar at gmail dot com
+
+# Directory /u0/dbase/nl/OOCYTES/ contains scripts and input files
+
+# Software versions:
+# fastqc: v0.10.1
+# cutadapt: v1.8.1
+# BWA-mem: 0.7.12-r1044
+# samtools: v1.2
+#   with rmdup from version 0.1.9
+
+##############################################################################################################
+# 1) Concatenate fastq files. 
+#    We use reads from female fibroblasts known to be euploid to construct
+#    variable-sized windows with a constant number of expected reads in each.
+
+cat /u0/dbase/Copy_Number_Pipeline/Sequencing/Jan_9_MiSeq/xx-*R1* > RAW_READS/xx-euploid_all.R1.fastq.gz 
+cat /u0/dbase/Copy_Number_Pipeline/Sequencing/Jan_9_MiSeq/xx-*R2* > RAW_READS/xx-euploid_all.R2.fastq.gz
+
+##############################################################################################################
+# 2) Run fastqc on these reads to determine trimming etc.
+mkdir FASTQC
+fastqc --outdir FASTQC --noextract --threads 6 RAW_READS/xx-euploid_all.R1.fastq.gz
+fastqc --outdir FASTQC --noextract --threads 6 RAW_READS/xx-euploid_all.R2.fastq.gz
+
+##############################################################################################################
+# 3) Prepare reads for mapping (script by Larry Wilhelm)
+# This process runs cutadapt for adapter trimming, and blunt trims reads. In this
+# example we are chopping 15 from 5' end and 5 from 3' end of both reads.
+# These numbers are arrived at by examining fastqc reports of the untrimmed reads.
+# The script takes the R1 file as input and figures out what the R2 file should
+# be based on the name. Files must end with fastq.gz.
+
+./prep_reads.sh RAW_READS/xx-euploid_all.R1.fastq.gz 15 5 15 5 &
+
+# Output is a file that ends with .clean.fastq.gz for R1 and R2.
+# move these to PROCESSED_READS
+mkdir PROCESSED_READS
+mv RAW_READS/*.clean.fastq.gz PROCESSED_READS
+mv RAW_READS/*.report.gz PROCESSED_READS
+
+##############################################################################################################
+# 4) Map with BWA-MEM
+
+# Note: The genome must first be indexed w/ bwa index
+
+# Arguments to script are: genome.fasta R1_file R2_file output_name
+# Example:
+
+./run_bwa_mem.sh \
+  RheMac7_repmasked/macam.fa.masked \
+  PROCESSED_READS/xx-euploid_all.R1.clean.fastq.gz \
+  PROCESSED_READS/xx-euploid_all.R2.clean.fastq.gz \
+  MAPPED_Batch1/xx-euploid_masked 
+
+# This script runs bwa-mem, and filters for quality of 30, and removes duplicates.
+# Outputs are:
+#  xx-euploid_all.bam
+#  xx-euploid_all.bam.bai
+#  xx-euploid_all.mapped_reads   # Read counts at each step
+#  xx-euploid_all.q30.bam
+#  xx-euploid_all.q30.rmdup.bam  # Duplicates removed by samtools
+
+#############################################################################################################
+# 5. Process non-control reads for mapping
+
+# Combine reads from male fibroblast samples
+cat /u0/dbase/Copy_Number_Pipeline/Sequencing/Jan_9_MiSeq/xy-*R1* > RAW_READS/xy-euploid_all.R1.fastq.gz 
+cat /u0/dbase/Copy_Number_Pipeline/Sequencing/Jan_9_MiSeq/xy-*R2* > RAW_READS/xy-euploid_all.R2.fastq.gz
+
+# Create links to raw data for male fibroblasts
+for f in `ls /u0/dbase/Copy_Number_Pipeline/Sequencing/Jan_9_MiSeq/xy-*`
+  do echo $f; ln -s $f RAW_READS; done
+
+# Create links to raw data from Nov 17 2014 runs
+for f in `ls /u0/dbase/Copy_Number_Pipeline/Sequencing/Nov_17_MiSeq/*`
+  do echo $f; ln -s $f RAW_READS; done
+
+# Create links to raw data from Nov 21 2014 runs
+for f in `ls /u0/dbase/lw/MiSeq_Nov21_2014/*.fastq.gz`
+  do echo $f; ln -s $f RAW_READS ; done
+
+# Combine reads from /home/groups/carbone/DNA150501LC/150527_NS500681_0004_AH3CNWAFXX_dual/
+# that come from different lanes. 
+for lane1 in `ls /home/groups/carbone/DNA150501LC/150527_NS500681_0004_AH3CNWAFXX_dual/rh*L001*`
+  do name=`basename $lane1 | sed 's/L001_//'`
+     lane2=`echo $lane1 | sed 's/L001/L002/'`
+     lane3=`echo $lane1 | sed 's/L001/L003/'`
+     lane4=`echo $lane1 | sed 's/L001/L004/'`
+  cat $lane1 $lane2 $lane3 $lane4 > RAW_READS/$name
+  done
+
+# Run FASTQC on raw reads
+for f in `ls RAW_READS/*`
+  do echo $f; fastqc --outdir FASTQC --noextract --threads 6 RAW_READS/$f; done
+
+# Prep reads for mapping
+for f in `ls RAW_READS/*R1_001.fastq.gz`; do ./prep_reads.sh $f 15 5 15 5 ; done
+
+# Output is a file that ends with .clean.fastq.gz for R1 and R2.
+# move these to PROCESSED_READS
+mkdir PROCESSED_READS
+mv RAW_READS/*.clean.fastq.gz PROCESSED_READS
+mv RAW_READS/*.report.gz PROCESSED_READS
+
+#############################################################################################################
+# 7. Map new samples to repeat masked genome using BWA-mem
+
+for r1 in `ls PROCESSED_READS/xy-euploid-*R1*.clean.fastq.gz`
+  do echo $r1; r2=`echo $r1 | sed 's/R1/R2/'`; echo $r2
+  base=`basename $r1 | sed 's/_R1_001.clean.fastq.gz//'`; echo MAPPED_Batch1/$base
+  ./run_bwa_mem.sh RheMac7_repmasked/macam.fa.masked $r1 $r2 MAPPED_Batch1/$base
+  done
+
+#############################################################################################################
+# 8. Convert to bed files
+for f in `ls MAPPED_Batch1/*.q30.rmdup.bam`
+  do echo $f; out=${f/.bam/.fix.bed}; echo $out
+  bamToBed -i $f | sed 's/chr0/chr/' $f > $out
+  done
+
+#for f in `ls MAPPED_Batch2/*.q30.rmdup.bam`
+#  do echo $f; out=${f/.bam/.fix.bed}; echo $out
+#  bamToBed -i $f | sed 's/chr0/chr/' $f > $out
+#  done

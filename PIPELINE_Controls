@@ -1,0 +1,105 @@
+# nathan dot lazar at gmail dot com
+
+## TODO: Add PIPELINE_Batch1 and PIPELINE_Batch2 to this file ## 
+
+# Directory /u0/dbase/nl/OOCYTES/ contains scripts and input files
+
+# Software versions:
+# fastqc: v0.10.1
+# cutadapt: v1.8.1
+# BWA-mem: 0.7.12-r1044
+# samtools: v1.2
+#   with rmdup from version 0.1.9
+
+##############################################################################################################
+# 1) Get links to files and concatenate to form 'all' read files for the xy and xx control 
+#    fibroblast samples
+
+# Make drive to store raw read files (fastq.gz)
+mkdir RAW_READS
+
+# Link to samples 
+ln -s /u0/dbase/Copy_Number_Pipeline/Sequencing/Jan_9_MiSeq/* RAW_READS/
+
+# Concatenate files to make "all" samples
+cat RAW_READS/xx-euploid*R1* > RAW_READS/xx-euploid_all.R1.fastq.gz 
+cat RAW_READS/xx-euploid*R2* > RAW_READS/xx-euploid_all.R2.fastq.gz
+cat RAW_READS/xy-euploid*R1* > RAW_READS/xy-euploid_all.R1.fastq.gz 
+cat RAW_READS/xy-euploid*R2* > RAW_READS/xy-euploid_all.R2.fastq.gz
+
+##############################################################################################################
+# 2) Run fastqc on these reads to determine trimming etc.
+mkdir FASTQC
+fastqc --outdir FASTQC --noextract --threads 6 RAW_READS/xx-euploid*.fastq.gz
+fastqc --outdir FASTQC --noextract --threads 6 RAW_READS/xy-euploid*.fastq.gz
+fastqc --outdir FASTQC --noextract --threads 6 RAW_READS/Ref-rhesus*.fastq.gz
+  # I'm not really sure what the Ref-rhesus sample is, fastqc reports look worse than other
+  # samples. Would need 30 bp trimmed from 5' and 10 from 3'. 
+  # Excluding these reads from further analysis
+
+##############################################################################################################
+# 3) Prepare reads for mapping (script by Larry Wilhelm)
+# This process runs cutadapt for adapter trimming, and blunt trims reads. 
+# We are chopping 15 from 5' end and 5 from 3' end of both reads.
+# These numbers are arrived at by examining fastqc reports of the untrimmed reads.
+# The script takes the R1 file as input and figures out what the R2 file should
+# be based on the name. Files must end with fastq.gz.
+
+for f in `ls RAW_READS/xx*R1*.fastq.gz`
+  do ./prep_reads.sh $f 15 5 15 5 &
+  done
+
+for f in `ls RAW_READS/xy*R1*.fastq.gz`
+  do ./prep_reads.sh $f 15 5 15 5 &
+  done
+
+# Output is a file that ends with .clean.fastq.gz for R1 and R2.
+# move these to PROCESSED_READS
+mkdir PROCESSED_READS
+mv RAW_READS/*.clean.fastq.gz PROCESSED_READS
+mv RAW_READS/*.report.gz PROCESSED_READS
+
+##############################################################################################################
+# 4) Map with BWA-MEM
+
+# Note: The genome must first be indexed w/ bwa index
+
+# Arguments to script are: genome.fasta R1_file R2_file output_name
+# Example:
+
+for r1 in `ls PROCESSED_READS/xx-euploid*R1*.clean.fastq.gz`
+  do r2=${r1/R1/R2}; base=${r1/R1/}; base=${base/_L001__001/}
+  base=${base/.clean.fastq.gz/}; base=${base/./}; base=$(basename $base)
+  echo $r1 $r2 $base
+  ./run_bwa_mem.sh RheMac7_repmasked/macam.fa.masked $r1 $r2 MAPPED_Controls/$base
+  done
+
+for r1 in `ls PROCESSED_READS/xy-euploid*R1*.clean.fastq.gz`
+  do r2=${r1/R1/R2}; base=${r1/R1/}; base=${base/_L001__001/}
+  base=${base/.clean.fastq.gz/}; base=${base/./}; base=$(basename $base)
+  echo $r1 $r2 $base
+  ./run_bwa_mem.sh RheMac7_repmasked/macam.fa.masked $r1 $r2 MAPPED_Controls/$base
+  done
+
+# This script runs bwa-mem, filters for quality of 30, and removes duplicates.
+# Results are placed in MAPPED_Controls
+# Example outputs are:
+#  xx-euploid_all.bam
+#  xx-euploid_all.bam.bai
+#  xx-euploid_all.mapped_reads   # Read counts at each step
+#  xx-euploid_all.q30.bam
+#  xx-euploid_all.q30.rmdup.bam  # Duplicates removed by samtools
+
+#############################################################################################################
+# 5) Convert to .bed for uploading to Ginkgo
+
+for f in `ls MAPPED_Controls/*.q30.rmdup.bam`
+  do new=${f/.bam/.bed}
+  bamToBed -i $f > $new
+  done
+
+# Ginkgo wants the chromosome numbers to not have leading zeros (chr1 not chr01)
+for f in `ls MAPPED_Controls/*.q30.rmdup.bed`
+  do new=${f/.bed/.fix.bed}
+  sed 's/chr0/chr/' $f > $new
+  done

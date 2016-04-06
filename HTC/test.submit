@@ -1,0 +1,17 @@
+ID=$(Cluster).$(Process)
+dir=/home/exacloud/lustre1/users/lazar/OOCYTES/
+should_transfer_files = IF_NEEDED
+when_to_transfer_output = ON_EXIT
+
+#Program
+Executable=$(dir)/run_fastqc.sh
+Output=$(dir)/FASTQC/fastq.$(Process).out
+Error=$(dir)/FASTQC/fastq.$(Process).err
+request_cpus = 6
+request_memory = 10 MB
+request_disk = 1 MB
+
+# generate different arguments for each sample
+Queue Arguments From (
+  10
+)
