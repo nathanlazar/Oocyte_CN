@@ -9,12 +9,12 @@
 # reads in each bin. This last value is what is plotted to determine loss of 
 # chromosomes (or pieces thereof).
 
-# Usage: Rscript count_bin_reads.R <bin_file.txt> <reads.bam> <output.txt>
+# Usage: Rscript count_bin_reads.R <bin_file.bin> <reads.bam> <output.txt>
 
 # Example: Rscript count_bin_reads.R \
-#            xx-bins_200.txt \
-#            MAPPED_MASKED/10-24-14-B1_S7_L001.q30.rmdup.bam \
-#            MAPPED_MASKED/10-24-14-B1_S7_L001.bin_200_counts.txt
+#            FIBROBLASTS/BINS/SE/xx-euploid-1_all_merge_500.bins \
+#            MAPPED/SE/160405_Chavez_reSplit.Rh150116_2_D3_B1.q30.sort.bam \
+#            COUNTS/SE/500/160405_Chavez_reSplit.Rh150116_2_D3_B1.counts
 
 library(GenomicAlignments)
 

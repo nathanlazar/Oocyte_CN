@@ -135,13 +135,18 @@ dir <- args[1]
 files <- list.files(dir, '*.cn')
 
 k <- 1
-for(i in 1:(length(files) %/% 16)) {
+for(i in 1:ceiling(length(files) / 16)) {
   png(file=paste0(dir, '/multi_', i, '.png'), width=480*8, height=480*4)
   plots <- list()
   for(j in 1:16) {
-    file.cn <- paste0(dir, files[k])
-    plots[[j]] <- plot_wg(file.cn)
-    k <- k+1
+    if(k > length(files)) {
+      plots[[j]] <- ggplot()
+      k <- k+1
+    } else {
+      file.cn <- paste0(dir, files[k])
+      plots[[j]] <- plot_wg(file.cn)
+      k <- k+1
+    }
   }
   multiplot(plots[[1]], plots[[2]], plots[[3]], plots[[4]], 
             plots[[5]], plots[[6]], plots[[7]], plots[[8]], 

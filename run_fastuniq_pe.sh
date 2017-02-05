@@ -10,13 +10,13 @@ gunzip $F1
 gunzip $F2
 
 # Running FastUniq
-echo ${F1/.gz/}  > COLLAPSED/$name1.txt
-echo ${F2/.gz/} >> COLLAPSED/$name1.txt
-$dir/fastuniq -i COLLAPSED/$name1.txt -o COLLAPSED/$name1.uniq.fq -p COLLAPSED/$name2.uniq.fq
+echo ${F1/.gz/}  > COLLAPSED_PE/$name1.txt
+echo ${F2/.gz/} >> COLLAPSED_PE/$name1.txt
+$dir/fastuniq -i COLLAPSED_PE/$name1.txt -o COLLAPSED_PE/$name1.uniq.fq -p COLLAPSED_PE/$name2.uniq.fq
 
 # Clean up 
-rm COLLAPSED/$name1.txt
+rm COLLAPSED_PE/$name1.txt
 gzip ${F1/.gz/}
 gzip ${F2/.gz/}
-gzip COLLAPSED/$name1.uniq.fq
-gzip COLLAPSED/$name2.uniq.fq
+gzip COLLAPSED_PE/$name1.uniq.fq
+gzip COLLAPSED_PE/$name2.uniq.fq

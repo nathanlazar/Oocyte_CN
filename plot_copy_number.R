@@ -1,7 +1,7 @@
 # nathan dot lazar at gmail dot com
 
-# Plots the ratio of observed over expected read counts in each bin
-# for the whole genome as well as individual chromosomes. png plots 
+# Plots the ratio of observed over expected read counts in each of the 
+# supplied bins for the whole sample as well as individual chromosomes
 # are generated and placed in a directory with the base name of the 
 # file plus _plots
 
