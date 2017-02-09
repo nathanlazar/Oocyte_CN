@@ -1,0 +1,5 @@
+# The pipeline wasn't run end-to-end. The reads were already mapped and .bam files placed
+# in Geoff_mapped/ 
+# Some names differ from what they would be if the pipeline was run in it's entirety.
+# Mapped files labeled with 151204_Sheep_PicoPlex should match the raw files
+# that start with 161220_split.

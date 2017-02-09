@@ -219,7 +219,15 @@ done done
 #############################################################################################################
 # 11. Get copy number calls and make plots for all samples 
 
+for f in `ls COUNTS/*/*/*.counts`
+  do Rscript get_copy_number.R $f
+done
+
 # condor_submit HTC/get_cn.submit
+
+for f in `ls COUNTS/*/*/*.cn`
+  do Rscript plot_copy_number.R $f
+done
 
 # condor_submit HTC/plot_cn.submit
 
@@ -233,3 +241,5 @@ Rscript plot_many.R COUNTS/SE/500/
 Rscript plot_many.R COUNTS/SE/1000/
 Rscript plot_many.R COUNTS/SE/2000/
 Rscript plot_many.R COUNTS/SE/4000/
+
+# condor_submit HTC/plot_many.submit
