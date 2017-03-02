@@ -7,7 +7,7 @@
 # Usage: Rscript get_copy_number.R <bin_count_file.counts> 
 
 # Example: Rscript get_copy_number.R \
-#          'D:/Box Sync/Rhesus_Embryos/Oocyte_CN/500/rh150409-1-b1-B1_S1.counts'
+#          COUNTS/500/rh150409-1-b1-B1_S1.counts
 
 library(dplyr)    # General data frame manipulation
 library(DNAcopy)  # Implements circular binary segmentation
@@ -86,7 +86,18 @@ if(grepl('2000', count.file)) bin.size=2000
 if(grepl('4000', count.file)) bin.size=4000
 
 counts <- read.table(count.file, header=T, stringsAsFactors=F)
-counts$chr <- factor(counts$chr, levels=c(paste0('chr', 1:20), 'chrX', 'chrY', 'chrM'))
+
+# Remove small chromosomes (< 50 bins)
+chr.bins <- counts %>% tbl_df %>%
+  group_by(chr) %>%
+  summarise(bins=length(count))
+
+counts <- counts[counts$chr %in% chr.bins$chr[chr.bins$bins >=50],]
+chrs <- unique(counts$chr)
+chr.sort <- c(paste0('chr', sort(as.numeric(sub('chr', '', chrs[chrs!='chrX'])))),
+            'chrX')
+
+counts$chr <- factor(counts$chr, levels=chr.sort)
 
 out <- sub('.counts', '.cn', count.file)
 name <- sub('.counts', '', count.file)

@@ -8,7 +8,7 @@
 # Usage: Rscript plot_copy_number.R <bin_count_file.cn> <out_dir>
 
 # Example: Rscript plot_copy_number.R \
-#          'D:/Box Sync/Rhesus_Embryos/Oocyte_CN/500/rh150409-1-b1-B1_S1.cn'
+#          COUNTS/500/Monosomy-0_S16.cn'
 
 library(dplyr)    # data frame manipulation
 library(ggplot2)  # Used for plotting
@@ -42,7 +42,6 @@ if (!file.exists(out.dir))
 #   group_by(chr, cn) %>%
 #   summarise(start=min(idx), end=max(idx))
 
-
 # Loop to make the counts.seg object. There's probably a way better way to do this
 # with dplyr
 counts.seg <- data.frame(chr=counts$chr[1], cn=counts$cn[1], 
@@ -66,18 +65,22 @@ for(i in 2:nrow(counts)) {
     }
   }
 }
-counts$chr <- factor(counts$chr, levels=c(paste0('chr', 1:20), 'chrX'))
-counts.seg$chr <- factor(counts.seg$chr, levels=levels(counts$chr))
+
+chrs <- unique(counts$chr)
+chr.sort <- c(paste0('chr', sort(as.numeric(sub('chr', '', 
+  chrs[chrs!='chrX'])))), 'chrX')
+counts$chr <- factor(counts$chr, levels=chr.sort)
+counts.seg$chr <- factor(counts.seg$chr, levels=chr.sort)
 counts.seg$cn <- as.numeric(counts.seg$cn)
 counts.seg$start <- as.numeric(counts.seg$start)
 counts.seg$end <- as.numeric(counts.seg$end)
 
-# Prep for plotting1
+# Prep for plotting
 bins.per.chrom <- counts %>% tbl_df %>% group_by(chr) %>% summarise(len=length(chr)) 
 bins.per.chrom$mid <- cumsum(bins.per.chrom$len) - (bins.per.chrom$len/2)
-n.chr <- length(unique(counts$chr))
+n.chr <- length(chrs)
 counts$col <- 2
-counts$col[counts$chr %in% unique(counts$chr)[seq(1,n.chr,2)]] <- 1
+counts$col[counts$chr %in% chrs[seq(1,n.chr,2)]] <- 1
 counts$col <- as.factor(counts$col)
 ylim <- c(0, min(max(counts$ratio), 6))
 
@@ -109,7 +112,7 @@ gt$layout$clip[gt$layout$name == "panel"] <- "off"
 grid.draw(gt)
 dev.off()
 
-for(chr in unique(counts$chr)) {
+for(chr in chrs) {
   chr.counts <- counts[counts$chr==chr,]
   chr.counts$idx <- chr.counts$bin
   chr.counts.seg <- counts.seg

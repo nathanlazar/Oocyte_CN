@@ -8,12 +8,16 @@ fastqc <- read.table('FASTQC/summary.txt', stringsAsFactors=F,
                      sep='\t', comment.char='')
 names(fastqc)[1] <- 'file'
 # Clean up file names
-fastqc$file <- sub('.fq_fastqc/fastqc_data.txt:', '', fastqc$file)
+fastqc$file <- sub('_fastqc/fastqc_data.txt:', '', fastqc$file)
 fastqc$file <- sub('_R1_001', '', fastqc$file)
 fastqc$file <- sub('_R2_001', '', fastqc$file)
 fastqc$file <- sub('.R1.', '', fastqc$file)
 fastqc$file <- sub('.R2.', '', fastqc$file)
+fastqc$file <- sub('_L001', '', fastqc$file)
 fastqc <- unique(fastqc)
+
+# Remove NA columns
+fastqc <- fastqc[, apply(fastqc, 2, function(x) sum(!is.na(x)) > 0)]
 
 # Reshape results
 fastqc$type <- ''
@@ -41,6 +45,7 @@ fastqc.trim$file <- sub('.fq_fastqc/fastqc_data.txt:', '', fastqc.trim$file)
 fastqc.trim$file <- sub('.trim', '', fastqc.trim$file)
 fastqc.trim$file <- sub('.R1', '', fastqc.trim$file)
 fastqc.trim$file <- sub('.R2', '', fastqc.trim$file)
+fastqc.trim$file <- sub('_L001', '', fastqc.trim$file)
 fastqc.trim <- unique(fastqc.trim)
 fastqc.trim$type <- ''
 
@@ -61,8 +66,10 @@ fastqc.trim$file <- sub('GC', '', fastqc.trim$file)
 stats2 <- dcast(file~type, data=fastqc.trim, value.var='V2', fun.aggregate=function(x) x[1])
 
 all <- merge(stats, stats2, all=T)
-all <- all[,c('file', 'Total', 'length', 'per.GC', 'fastqc.dedup.per', 
-              'Total.trimmed', 'length.trimmed', 'per.GC.trimmed', 'fastqc.dedup.per.trimmed')]
+
+# all <- all[,c('file', 'Total', 'length', 'per.GC', 'fastqc.dedup.per', 
+#               'Total.trimmed', 'length.trimmed', 'per.GC.trimmed', 'fastqc.dedup.per.trimmed')]
+# Note: missing data from trimming since this was done as paired ends
 
 # Read in statistics from mapping
 map.stats <- read.table('MAPPED/read_stats.txt', stringsAsFactors=F,

@@ -5,7 +5,7 @@
 
 # Usage: Rscript plot_many.R <dir>
 
-# Example: Rscript plot_many.R ''D:/Box Sync/Rhesus_Embryos/Oocyte_CN/PE/1000/'
+# Example: Rscript plot_many.R COUNTS/1000/
 
 library(dplyr)    # data frame manipulation
 library(ggplot2)  # Used for plotting
@@ -48,8 +48,12 @@ plot_wg <- function(cn.file) {
       }
     }
   }
-  counts$chr <- factor(counts$chr, levels=c(paste0('chr', 1:20), 'chrX'))
-  counts.seg$chr <- factor(counts.seg$chr, levels=levels(counts$chr))
+
+  chrs <- unique(counts$chr)
+  chr.sort <- c(paste0('chr', sort(as.numeric(sub('chr', '',
+     chrs[chrs!='chrX'])))), 'chrX')
+  counts$chr <- factor(counts$chr, levels=chr.sort)
+  counts.seg$chr <- factor(counts.seg$chr, levels=chr.sort)
   counts.seg$cn <- as.numeric(counts.seg$cn)
   counts.seg$start <- as.numeric(counts.seg$start)
   counts.seg$end <- as.numeric(counts.seg$end)
@@ -57,9 +61,9 @@ plot_wg <- function(cn.file) {
   # Prep for plotting
   bins.per.chrom <- counts %>% tbl_df %>% group_by(chr) %>% summarise(len=length(chr)) 
   bins.per.chrom$mid <- cumsum(bins.per.chrom$len) - (bins.per.chrom$len/2)
-  n.chr <- length(unique(counts$chr))
+  n.chr <- length(chrs)
   counts$col <- 2
-  counts$col[counts$chr %in% unique(counts$chr)[seq(1,n.chr,2)]] <- 1
+  counts$col[counts$chr %in% chrs[seq(1,n.chr,2)]] <- 1
   counts$col <- as.factor(counts$col)
   ylim <- c(0, min(max(counts$ratio), 6))
   
