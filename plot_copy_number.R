@@ -31,7 +31,10 @@ if(grepl('2000', cn.file)) bin.size=2000
 if(grepl('4000', cn.file)) bin.size=4000
 
 counts <- read.table(cn.file, header=T, stringsAsFactors=F)
-                     
+# Remove error rows with NAs or end < start
+counts <- counts[!is.na(counts$chr),]
+counts <- counts[counts$start < counts$end,]
+
 # Make output directory if necessary 
 if (!file.exists(out.dir))
   dir.create(file.path(out.dir))

@@ -25,7 +25,10 @@ split.name <- strsplit(name, split='/', fixed=T)[[1]]
 name <- split.name[length(split.name)]
 
 counts <- read.table(cn.file, header=T, stringsAsFactors=F)
-                     
+# Remove error rows with NAs or end < start
+counts <- counts[!is.na(counts$chr),]
+counts <- counts[counts$start < counts$end,]
+
 # Make output directory if necessary 
 if (!file.exists(out.dir))
   dir.create(file.path(out.dir))
