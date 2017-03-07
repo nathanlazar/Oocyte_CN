@@ -39,12 +39,6 @@ counts <- counts[counts$start < counts$end,]
 if (!file.exists(out.dir))
   dir.create(file.path(out.dir))
 
-# Make a dataframe of the copy number calls
-# counts.seg <- tbl_df(counts) %>% 
-#   select(chr, idx, cn) %>%
-#   group_by(chr, cn) %>%
-#   summarise(start=min(idx), end=max(idx))
-
 # Loop to make the counts.seg object. There's probably a way better way to do this
 # with dplyr
 counts.seg <- data.frame(chr=counts$chr[1], cn=counts$cn[1], 

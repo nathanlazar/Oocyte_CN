@@ -33,21 +33,17 @@ counts <- counts[counts$start < counts$end,]
 if (!file.exists(out.dir))
   dir.create(file.path(out.dir))
 
-# Make a dataframe of the copy number calls
-# counts.seg <- tbl_df(counts) %>% 
-#   select(chr, idx, cn) %>%
-#   group_by(chr, cn) %>%
-#   summarise(start=min(idx), end=max(idx))
-
-
-counts$chr <- factor(counts$chr, levels=c(paste0('chr', 1:20), 'chrX'))
+chrs <- unique(counts$chr)
+chrs <- c(paste0('chr', sort(as.numeric(sub('chr', '', 
+                      chrs[chrs!='chrX'])))), 'chrX')
+counts$chr <- factor(counts$chr, levels=chrs)
 
 # Prep for plotting
 bins.per.chrom <- counts %>% tbl_df %>% group_by(chr) %>% summarise(len=length(chr)) 
 bins.per.chrom$mid <- cumsum(bins.per.chrom$len) - (bins.per.chrom$len/2)
-n.chr <- length(unique(counts$chr))
+n.chr <- length(chrs)
 counts$col <- 2
-counts$col[counts$chr %in% unique(counts$chr)[seq(1,n.chr,2)]] <- 1
+counts$col[counts$chr %in% chrs[seq(1,n.chr,2)]] <- 1
 counts$col <- as.factor(counts$col)
 ylim <- c(0, max(counts$count))
 
@@ -72,13 +68,12 @@ p <- ggplot(counts, aes(x=idx, y=count)) +
                 label=sub('chr', '', bins.per.chrom$chr))) +
   labs(title=name) 
 
-
 gt <- ggplot_gtable(ggplot_build(p))
 gt$layout$clip[gt$layout$name == "panel"] <- "off"
 grid.draw(gt)
 dev.off()
 
-for(chr in unique(counts$chr)) {
+for(chr in chrs) {
   chr.counts <- counts[counts$chr==chr,]
   chr.counts$idx <- chr.counts$bin
   chr.bins.per.chrom <- bins.per.chrom[bins.per.chrom$chr==chr,]
@@ -94,7 +89,7 @@ for(chr in unique(counts$chr)) {
   chr.counts$mb <- chr.counts$end %/% 10000000
   mb10.bins <- chr.counts %>% tbl_df %>% group_by(mb) %>% summarise(mb.bins=length(idx))
   
-  png(file=paste0(out.dir, '/', chr, '_raw.png'), width = 480*2)
+  # png(file=paste0(out.dir, '/', chr, '_raw.png'), width = 480*2)
   p <- ggplot(chr.counts, aes(x=idx, y=count)) +
     geom_point(aes(colour=col)) +
     theme(legend.position="none") +
@@ -110,5 +105,5 @@ for(chr in unique(counts$chr)) {
           axis.text.y=element_text(size=20)) +
     labs(title=paste(name, 'chromosome', chr.num))
   print(p)
-  dev.off()
+  # dev.off()
 }
