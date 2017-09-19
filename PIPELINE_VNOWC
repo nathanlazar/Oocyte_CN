@@ -119,7 +119,7 @@ cd ..
 
 # Collapse single end reads
 mkdir COLLAPSED_SE
-for f in `TRIM_SE/*.trim.fq.gz | grep -Ev "R[1|2]"`
+for f in `ls TRIM_SE/*.trim.fq.gz | grep -Ev "R[1|2]"`
   do name=${f/.fq.gz/}; name=$(basename $name); echo $name
   gunzip -c $f | fastx_collapser -Q33 > COLLAPSED_SE/$name.uniq.fa
   gzip COLLAPSED_SE/$name.trim.collapse.fa
@@ -197,8 +197,6 @@ Rscript get_stats.R ## UPDATE THIS?
 #############################################################################################################
 # 10. Get counts and ratios in each bin for the 4 bin sizes
 
-Rscript count_bin_reads.R 
-
 for bins in 500 1000 2000 4000
   do for f in `ls MAPPED/SE/*.bam`
     do out=$(basename $f); out=${out/.q30.sort.bam/.counts}
@@ -231,6 +229,13 @@ done
 
 # condor_submit HTC/plot_cn.submit
 
+# Make plots of raw counts for the 4000 bins for all samples
+for f in `ls COUNTS/*/4000/*.cn`
+  do Rscript plot_raw.R $f
+done
+
+# condor_submit HTC/plot_raw.submit
+
 # Make whole genome plots for 16 samples at a time
 # Will produce mulit_<num>.png files in the given directory
 Rscript plot_many.R COUNTS/PE/500/
@@ -243,3 +248,22 @@ Rscript plot_many.R COUNTS/SE/2000/
 Rscript plot_many.R COUNTS/SE/4000/
 
 # condor_submit HTC/plot_many.submit
+
+##################################################################
+# 12. Count the number of reads mapped to chrM for all samples
+touch chrM_counts.txt
+for f in `ls Geoff_mapped/*/*.bam`
+  do name=${f/.q30.sort.bam/}
+  name=$(basename $name)
+  count=`/opt/installed/samtools view $f | grep 'chrM' | wc -l`
+  echo $name $count >> chrM_counts.txt
+done
+
+# 13. Count the number of reads mapped to chrY for all samples
+touch chrY_counts.txt
+for f in `ls Geoff_mapped/*/*.bam`
+  do name=${f/.q30.sort.bam/}
+  name=$(basename $name)
+  count=`/opt/installed/samtools view $f | grep 'chrY' | wc -l`
+  echo $name $count >> chrY_counts.txt
+done

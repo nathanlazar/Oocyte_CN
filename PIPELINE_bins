@@ -1,0 +1,229 @@
+# Steps to make variable sized bins using reads from fibroblasts known to be 
+# euploid. We only use the single-cell samples to construct bins
+# Bins are made treating reads as paired-end and single-ended with 
+# 500, 1,000, 2,000 and 4,000 reads per bin
+
+# nathan dot lazar at gmail dot com
+
+# Add paths to tools
+PATH=$PATH/:/home/exacloud/lustre1/users/lazar/bin
+PATH=$PATH/:/home/exacloud/lustre1/users/lazar/bin/bedtools2/bin
+PATH=$PATH/:/opt/installed
+PATH=$PATH/:/home/exacloud/lustre1/users/lazar/bin/FastQC
+PATH=$PATH/:/home/exacloud/lustre1/users/lazar/bin/fastx
+PATH=$PATH/:/home/exacloud/lustre1/users/lazar/bin/FastUniq/source
+export PATH
+
+# Set the number of parallel threads to use
+cores=20
+
+# Software versions:
+# fastqc: v0.10.1
+# Trimmomatic v0.35  # Note: .jar file needs to be in specific directory see step 3)
+# fastx: v0.0.13
+# BWA-mem: 0.7.9a
+# samtools: 0.1.19-44428cd
+# Bedtools: v2.25.0  # I couldn't add this to the path for some reason see step 9)
+# fastuniq:          # I couldn't find a version 
+
+##############################################################################################################
+# 0) Collect all raw read files to process
+
+# FASTQ should have all fastq.gz files
+# Controls: 20 xx paired-end read sets,
+# 1 with 0 cells:                         xx-euploid-0
+# 5 with 1 cell:                          xx-euploid-1a - xx-euploid-1e
+# 1 with 5 cells:                         xx-euploid-5
+# 1 with 10 cells:                        xx-euploid-10
+# 1 with all of the above combined:       xx-euploid_all
+# 1 with just the single cells combined:  xx-euploid-1_all
+
+# Generate the last two just by concatentating the unzipped files
+
+##############################################################################################################
+# 2) Run fastqc on the raw reads
+mkdir FASTQC
+fastqc --outdir FASTQC --threads $cores FASTQ/*.fq.gz
+
+# condor_submit HTC/fastqc.submit
+
+# Look at the number of reads filtered, read length, etc. before trimming
+# Write to summary.txt
+cd FASTQC
+for f in `ls *.zip`; do unzip $f; done
+grep "Total Sequences" */fastqc_data.txt > summary.txt
+grep "Sequence length" */fastqc_data.txt >> summary.txt
+grep "Total Deduplicated Percentage" */fastqc_data.txt >> summary.txt
+grep "^%GC" */fastqc_data.txt >> summary.txt
+rm *.html
+rm -r *fastqc
+cd ..
+
+##############################################################################################################
+# 3) Trim low quality bases w/ Trimmomatic
+
+# Trim paired end reads
+mkdir TRIM_PE
+dir=/home/exacloud/lustre1/users/lazar/bin/Trimmomatic-0.35
+for F1 in `ls FASTQ/*R1*fastq.gz`
+  do name=${F1/_R1_001.fastq.gz/}; name=${name/.R1.fastq.gz}; name=$(basename $name)
+  F2=${F1/R1/R2}
+  java -jar $dir/trimmomatic-0.35.jar \
+    PE -threads $cores -phred33 $F1 $F2 \
+    TRIM_PE/$name.R1.trim.fq.gz TRIM_PE/$name.R1.unpaired.fq.gz \
+    TRIM_PE/$name.R2.trim.fq.gz TRIM_PE/$name.R2.unpaired.fq.gz \
+    ILLUMINACLIP:$dir/adapters/TruSeq3-PE.fa:2:30:10 LEADING:5 TRAILING:5 \
+    SLIDINGWINDOW:4:15 MINLEN:36 > TRIM_PE/${name}_trim.txt
+done
+
+# Trim reads as if they were single-ended
+mkdir TRIM_SE
+for F in `ls FASTQ/*.fastq.gz`
+  do name=${F/_001.fastq.gz/}; name=${name/.fastq.gz/}; name=$(basename $name)
+  java -jar $dir/trimmomatic-0.35.jar \
+    SE -threads $cores -phred33 $F \
+    TRIM_SE/$name.trim.fq.gz  \
+    ILLUMINACLIP:$dir/adapters/TruSeq3-SE.fa:2:30:10 LEADING:5 TRAILING:5 \
+    SLIDINGWINDOW:4:15 MINLEN:36 > TRIM_SE/${name}_trim.txt
+done
+
+# condor_submit HTC/trim_pe.submit
+# condor_submit HTC/trim_se.submit
+
+##############################################################################################################
+# 4) Run fastqc on the trimmed reads
+
+mkdir FASTQC_TRIM_PE
+fastqc --outdir FASTQC_TRIM_PE --threads $cores TRIM_PE/*trim.fq.gz
+mkdir FASTQC_TRIM_SE
+fastqc --outdir FASTQC_TRIM_SE --threads $cores TRIM_SE/*trim.fq.gz
+
+# Look at the number of reads filtered, read length, etc. before trimming
+# Write to summary.txt
+cd FASTQC_TRIM_PE
+for f in `ls *.zip`; do unzip $f; done
+grep "Total Sequences" */fastqc_data.txt > summary.txt
+grep "Sequence length" */fastqc_data.txt >> summary.txt
+grep "Total Deduplicated Percentage" */fastqc_data.txt >> summary.txt
+grep "^%GC" */fastqc_data.txt >> summary.txt
+rm *.html; rm -r *fastqc; cd ..
+
+cd FASTQC_TRIM_SE
+for f in `ls *.zip`; do unzip $f; done
+grep "Total Sequences" */fastqc_data.txt > summary.txt
+grep "Sequence length" */fastqc_data.txt >> summary.txt
+grep "Total Deduplicated Percentage" */fastqc_data.txt >> summary.txt
+grep "^%GC" */fastqc_data.txt >> summary.txt
+rm *.html; rm -r *fastqc; cd ..
+
+##############################################################################################################
+# 4) Deduplicate (a.k.a. collapse) reads that are exact copies before mapping
+#    with fastx for single-end reads and fastuniq for paired-end reads
+
+# Collapse single end reads
+mkdir COLLAPSED_SE
+for f in `ls TRIM_SE/*.trim.fq.gz`
+  do name=${f/.fq.gz/}; name=$(basename $name); echo $name
+  gunzip -c $f | fastx_collapser -Q33 > COLLAPSED_SE/$name.uniq.fq
+  gzip COLLAPSED_SE/$name.uniq.fq
+done
+
+# Collapse paired-end reads
+mkdir COLLAPSED_PE
+for F1 in `ls TRIM_PE/*R1*.trim.fq.gz`
+  do F2=${F1/R1/R2}
+  name1=${F1/.fq.gz/}; name1=$(basename $name1)
+  name2=${name1/R1/R2}
+  gunzip $F1
+  gunzip $F2
+  echo ${F1/.gz/}  > COLLAPSED_PE/$name1.txt
+  echo ${F2/.gz/} >> COLLAPSED_PE/$name1.txt
+  fastuniq -i COLLAPSED_PE/$name1.txt \ 
+    -o COLLAPSED_PE/$name1.uniq.fq -p COLLAPSED_PE/$name2.uniq.fq
+done
+
+# Clean up
+rm COLLAPSED_PE/*.txt
+gzip TRIM_PE/*.fq; gzip COLLAPSED_SE/*.fq; gzip COLLAPSED_PE/*.fq
+
+# condor_submit HTC/collapse_se.submit
+# condor_submit HTC/collapse_pe.submit
+
+##############################################################################################################
+# 4) Map with BWA-MEM  
+
+# Note: The genome must first be indexed w/ bwa index
+
+# Map single end reads using 12 cores and rheMac8
+mkdir MAPPED_SE
+for f in `ls COLLAPSED_SE/*.fq.gz`
+  do ./run_bwa_mem_se.sh $f; done
+
+# condor_submit HTC/map_se.submit
+
+mkdir MAPPED_PE
+for F1 in `ls COLLAPSED/*.fq.gz | grep R1`
+  do ./run_bwa_mem_pe.sh $F1; done
+
+# condor_submit HTC/map_pe.submit
+
+# This script runs bwa-mem, and filters for quality of 30
+# Outputs are:
+#  <read_name>.mapped_reads   # Read counts at each step
+#  <read_name>.q30.sort.bam
+#  <read_name>.q30.sort.bam.bai
+
+## TODO: there was an error mapping individual samples with paired ends
+
+## TODO: fix the stats summarizer
+# Summarize the reads mapped, unique positions, etc.
+# output is file MAPPED_SE/read_stats.txt
+# and MAPPED_PE/read_stats.txt
+./summarize.sh
+
+#############################################################################################################
+# 8. Combine reads that were mapped as single ended and look at the read depths
+
+for f1 in `ls MAPPED_SE/*R1*.bam`
+  do name=${f1/.R1.q30.sort.bam}; f2=${f1/R1/R2}
+  samtools merge ${name}_merge.bam $f1 $f2 
+done
+
+# Make a .txt file of the read depth at each position
+for f in `ls MAPPED_SE/*.bam`
+  do samtools depth $f > ${f/.bam/.depth}; done
+for f in `ls MAPPED_PE/*.bam`
+  do samtools depth $f > ${f/.bam/.depth}; done
+
+#############################################################################################################
+# 9. Convert bam files to bed files for viewing
+for f in `ls MAPPED_SE/*.bam`
+  do /home/users/lazar/bedtools2/bin/bamToBed -i $f > ${f/.bam/.bed}; done
+
+for f in `ls MAPPED_PE/*.bam`
+  do /home/users/lazar/bedtools2/bin/bamToBed -i $f > ${f/.bam/.bed}; done
+
+# condor_submit HTC/bamToBed.submit
+
+#############################################################################################################
+# 10. Summarize mapping statistics w/ R
+
+# TODO: rework this script
+Rscript get_stats.R
+
+#############################################################################################################
+# 11. Make bins using the combined single-cell data with expected number of reads
+#     of 500, 1,000, 2,000 and 4,000
+
+mkdir BINS; mkdir BINS/PE; mkdir BINS/SE
+for cnt in 500 1000 2000 4000
+  do Rscript make_bins.R MAPPED_SE/xx-euploid-1_all_merge.bam $cnt \
+    BINS/SE/xx-euploid-1_all_merge_${cnt}.bins
+done
+
+for cnt in 500 1000 2000 4000
+  do Rscript make_bins.R MAPPED_PE/xx-euploid-1_all.q30.sort.bam $cnt \
+    BINS/PE/xx-euploid-1_all_${cnt}.bins
+done
+
+# condor_submit HTC/make_bins.submit
